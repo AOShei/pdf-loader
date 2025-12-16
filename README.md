@@ -165,15 +165,6 @@ Future development focuses on expanding extraction capabilities for document pro
 - Enhanced spacing/layout preservation for multi-column documents
 - Performance optimizations (object caching, parallel page processing)
 
-## Contributing
-
-This is a learning project and contributions are welcome! Areas particularly suited for contribution:
-
-- Test coverage (currently no automated tests)
-- Additional PDF operator support
-- Font encoding improvements
-- Documentation and examples
-
 ## License
 
 MIT License - see [LICENSE](LICENSE) file for details.
