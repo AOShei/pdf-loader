@@ -8,6 +8,7 @@ sample.pdf
 
 # GitHub workflows
 .github/
+CLAUDE.md
 
 # Binaries for programs and plugins
 pdf-loader

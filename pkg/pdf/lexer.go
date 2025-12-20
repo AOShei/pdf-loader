@@ -165,7 +165,8 @@ func (l *Lexer) readString() (StringObject, error) {
 
 func (l *Lexer) readHexString() (HexStringObject, error) {
 	l.reader.ReadByte() // consume '<'
-	var data []byte
+	var hexChars []byte
+
 	for {
 		b, err := l.reader.ReadByte()
 		if err != nil {
@@ -177,8 +178,25 @@ func (l *Lexer) readHexString() (HexStringObject, error) {
 		if isWhitespace(b) {
 			continue
 		}
-		data = append(data, b)
+		if isHexDigit(b) {
+			hexChars = append(hexChars, b)
+		}
+		// Skip invalid characters (per PDF spec relaxed parsing)
 	}
+
+	// PDF spec: if odd length, append '0'
+	if len(hexChars)%2 != 0 {
+		hexChars = append(hexChars, '0')
+	}
+
+	// Convert hex pairs to bytes
+	data := make([]byte, len(hexChars)/2)
+	for i := 0; i < len(hexChars); i += 2 {
+		high := hexCharToNibble(hexChars[i])
+		low := hexCharToNibble(hexChars[i+1])
+		data[i/2] = (high << 4) | low
+	}
+
 	return HexStringObject(data), nil
 }
 
@@ -375,4 +393,23 @@ func isDigit(b byte) bool {
 
 func isAlpha(b byte) bool {
 	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
+}
+
+func isHexDigit(b byte) bool {
+	return (b >= '0' && b <= '9') ||
+		(b >= 'a' && b <= 'f') ||
+		(b >= 'A' && b <= 'F')
+}
+
+func hexCharToNibble(b byte) byte {
+	if b >= '0' && b <= '9' {
+		return b - '0'
+	}
+	if b >= 'a' && b <= 'f' {
+		return b - 'a' + 10
+	}
+	if b >= 'A' && b <= 'F' {
+		return b - 'A' + 10
+	}
+	return 0
 }

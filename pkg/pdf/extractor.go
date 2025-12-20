@@ -1,7 +1,6 @@
 package pdf
 
 import (
-	"fmt"
 	"math"
 	"strings"
 )
@@ -10,107 +9,279 @@ import (
 type Matrix [6]float64
 
 // glyphToUnicode maps PostScript glyph names to Unicode characters
-var glyphToUnicode = map[string]rune{
-	"/space":        ' ',
-	"/exclam":       '!',
-	"/quotedbl":     '"',
-	"/numbersign":   '#',
-	"/dollar":       '$',
-	"/percent":      '%',
-	"/ampersand":    '&',
-	"/quoteright":   '\'',
-	"/quotesingle":  '\'',
-	"/parenleft":    '(',
-	"/parenright":   ')',
-	"/asterisk":     '*',
-	"/plus":         '+',
-	"/comma":        ',',
-	"/hyphen":       '-',
-	"/minus":        '-',
-	"/period":       '.',
-	"/slash":        '/',
-	"/zero":         '0',
-	"/one":          '1',
-	"/two":          '2',
-	"/three":        '3',
-	"/four":         '4',
-	"/five":         '5',
-	"/six":          '6',
-	"/seven":        '7',
-	"/eight":        '8',
-	"/nine":         '9',
-	"/colon":        ':',
-	"/semicolon":    ';',
-	"/less":         '<',
-	"/equal":        '=',
-	"/greater":      '>',
-	"/question":     '?',
-	"/at":           '@',
-	"/A":            'A',
-	"/B":            'B',
-	"/C":            'C',
-	"/D":            'D',
-	"/E":            'E',
-	"/F":            'F',
-	"/G":            'G',
-	"/H":            'H',
-	"/I":            'I',
-	"/J":            'J',
-	"/K":            'K',
-	"/L":            'L',
-	"/M":            'M',
-	"/N":            'N',
-	"/O":            'O',
-	"/P":            'P',
-	"/Q":            'Q',
-	"/R":            'R',
-	"/S":            'S',
-	"/T":            'T',
-	"/U":            'U',
-	"/V":            'V',
-	"/W":            'W',
-	"/X":            'X',
-	"/Y":            'Y',
-	"/Z":            'Z',
-	"/bracketleft":  '[',
-	"/backslash":    '\\',
-	"/bracketright": ']',
-	"/asciicircum":  '^',
-	"/underscore":   '_',
-	"/grave":        '`',
-	"/quoteleft":    '`',
-	"/a":            'a',
-	"/b":            'b',
-	"/c":            'c',
-	"/d":            'd',
-	"/e":            'e',
-	"/f":            'f',
-	"/g":            'g',
-	"/h":            'h',
-	"/i":            'i',
-	"/j":            'j',
-	"/k":            'k',
-	"/l":            'l',
-	"/m":            'm',
-	"/n":            'n',
-	"/o":            'o',
-	"/p":            'p',
-	"/q":            'q',
-	"/r":            'r',
-	"/s":            's',
-	"/t":            't',
-	"/u":            'u',
-	"/v":            'v',
-	"/w":            'w',
-	"/x":            'x',
-	"/y":            'y',
-	"/z":            'z',
-	"/braceleft":    '{',
-	"/bar":          '|',
-	"/braceright":   '}',
-	"/asciitilde":   '~',
-	"/fi":           'f', // ligature - we'll expand to 'fi' later if needed
-	"/fl":           'f', // ligature - we'll expand to 'fl' later if needed
+var glyphToUnicode = map[string]string{
+	"/space":        " ",
+	"/exclam":       "!",
+	"/quotedbl":     "\"",
+	"/numbersign":   "#",
+	"/dollar":       "$",
+	"/percent":      "%",
+	"/ampersand":    "&",
+	"/quoteright":   "'",
+	"/quotesingle":  "'",
+	"/parenleft":    "(",
+	"/parenright":   ")",
+	"/asterisk":     "*",
+	"/plus":         "+",
+	"/comma":        ",",
+	"/hyphen":       "-",
+	"/period":       ".",
+	"/slash":        "/",
+	"/zero":         "0",
+	"/one":          "1",
+	"/two":          "2",
+	"/three":        "3",
+	"/four":         "4",
+	"/five":         "5",
+	"/six":          "6",
+	"/seven":        "7",
+	"/eight":        "8",
+	"/nine":         "9",
+	"/colon":        ":",
+	"/semicolon":    ";",
+	"/less":         "<",
+	"/equal":        "=",
+	"/greater":      ">",
+	"/question":     "?",
+	"/at":           "@",
+	"/A":            "A",
+	"/B":            "B",
+	"/C":            "C",
+	"/D":            "D",
+	"/E":            "E",
+	"/F":            "F",
+	"/G":            "G",
+	"/H":            "H",
+	"/I":            "I",
+	"/J":            "J",
+	"/K":            "K",
+	"/L":            "L",
+	"/M":            "M",
+	"/N":            "N",
+	"/O":            "O",
+	"/P":            "P",
+	"/Q":            "Q",
+	"/R":            "R",
+	"/S":            "S",
+	"/T":            "T",
+	"/U":            "U",
+	"/V":            "V",
+	"/W":            "W",
+	"/X":            "X",
+	"/Y":            "Y",
+	"/Z":            "Z",
+	"/bracketleft":  "[",
+	"/backslash":    "\\",
+	"/bracketright": "]",
+	"/asciicircum":  "^",
+	"/underscore":   "_",
+	"/grave":        "`",
+	"/quoteleft":    "`",
+	"/a":            "a",
+	"/b":            "b",
+	"/c":            "c",
+	"/d":            "d",
+	"/e":            "e",
+	"/f":            "f",
+	"/g":            "g",
+	"/h":            "h",
+	"/i":            "i",
+	"/j":            "j",
+	"/k":            "k",
+	"/l":            "l",
+	"/m":            "m",
+	"/n":            "n",
+	"/o":            "o",
+	"/p":            "p",
+	"/q":            "q",
+	"/r":            "r",
+	"/s":            "s",
+	"/t":            "t",
+	"/u":            "u",
+	"/v":            "v",
+	"/w":            "w",
+	"/x":            "x",
+	"/y":            "y",
+	"/z":            "z",
+	"/braceleft":    "{",
+	"/bar":          "|",
+	"/braceright":   "}",
+	"/asciitilde":   "~",
+
+	// Ligatures
+	"/fi":  "fi",
+	"/fl":  "fl",
+	"/ff":  "ff",
+	"/ffi": "ffi",
+	"/ffl": "ffl",
+	"/st":  "st",
+	"/ct":  "ct",
+	"/IJ":  "IJ",
+	"/ij":  "ij",
+
+	// Extended Latin characters
+	"/AE":      "Æ",
+	"/ae":      "æ",
+	"/OE":      "Œ",
+	"/oe":      "œ",
+	"/oslash":  "ø",
+	"/Oslash":  "Ø",
+	"/lslash":  "ł",
+	"/Lslash":  "Ł",
+	"/Eth":     "Ð",
+	"/eth":     "ð",
+	"/Thorn":   "Þ",
+	"/thorn":   "þ",
+	"/ssharp":  "ß",
+	"/Scaron":  "Š",
+	"/scaron":  "š",
+	"/Zcaron":  "Ž",
+	"/zcaron":  "ž",
+	"/Ccedilla": "Ç",
+	"/ccedilla": "ç",
+
+	// Mathematical operators
+	"/minus":        "−", // U+2212 math minus (not hyphen)
+	"/multiply":     "×",
+	"/divide":       "÷",
+	"/notequal":     "≠",
+	"/lessequal":    "≤",
+	"/greaterequal": "≥",
+	"/approxequal":  "≈",
+	"/infinity":     "∞",
+	"/integral":     "∫",
+	"/product":      "∏",
+	"/summation":    "∑",
+	"/radical":      "√",
+	"/partialdiff":  "∂",
+	"/plusminus":    "±",
+	"/therefore":    "∴",
+	"/proportional": "∝",
+	"/angle":        "∠",
+	"/logicaland":   "∧",
+	"/logicalor":    "∨",
+	"/intersection": "∩",
+	"/union":        "∪",
+
+	// Greek letters (common in math/science)
+	"/Alpha":   "Α",
+	"/Beta":    "Β",
+	"/Gamma":   "Γ",
+	"/Delta":   "Δ",
+	"/Epsilon": "Ε",
+	"/Zeta":    "Ζ",
+	"/Eta":     "Η",
+	"/Theta":   "Θ",
+	"/Iota":    "Ι",
+	"/Kappa":   "Κ",
+	"/Lambda":  "Λ",
+	"/Mu":      "Μ",
+	"/Nu":      "Ν",
+	"/Xi":      "Ξ",
+	"/Omicron": "Ο",
+	"/Pi":      "Π",
+	"/Rho":     "Ρ",
+	"/Sigma":   "Σ",
+	"/Tau":     "Τ",
+	"/Upsilon": "Υ",
+	"/Phi":     "Φ",
+	"/Chi":     "Χ",
+	"/Psi":     "Ψ",
+	"/Omega":   "Ω",
+	"/alpha":   "α",
+	"/beta":    "β",
+	"/gamma":   "γ",
+	"/delta":   "δ",
+	"/epsilon": "ε",
+	"/zeta":    "ζ",
+	"/eta":     "η",
+	"/theta":   "θ",
+	"/iota":    "ι",
+	"/kappa":   "κ",
+	"/lambda":  "λ",
+	"/mu":      "μ",
+	"/nu":      "ν",
+	"/xi":      "ξ",
+	"/omicron": "ο",
+	"/pi":      "π",
+	"/rho":     "ρ",
+	"/sigma":   "σ",
+	"/tau":     "τ",
+	"/upsilon": "υ",
+	"/phi":     "φ",
+	"/chi":     "χ",
+	"/psi":     "ψ",
+	"/omega":   "ω",
+
+	// Astronomy/Physics symbols
+	"/circledot": "⊙", // Solar mass symbol
+	"/sun":       "☉",
+	"/venus":     "♀",
+	"/earth":     "♁",
+	"/mars":      "♂",
+	"/jupiter":   "♃",
+	"/saturn":    "♄",
+	"/uranus":    "♅",
+	"/neptune":   "♆",
+	"/pluto":     "♇",
+
+	// Superscripts
+	"/zero.superior":  "⁰",
+	"/one.superior":   "¹",
+	"/two.superior":   "²",
+	"/three.superior": "³",
+	"/four.superior":  "⁴",
+	"/five.superior":  "⁵",
+	"/six.superior":   "⁶",
+	"/seven.superior": "⁷",
+	"/eight.superior": "⁸",
+	"/nine.superior":  "⁹",
+	"/plus.superior":  "⁺",
+	"/minus.superior": "⁻",
+
+	// Subscripts
+	"/zero.inferior":  "₀",
+	"/one.inferior":   "₁",
+	"/two.inferior":   "₂",
+	"/three.inferior": "₃",
+	"/four.inferior":  "₄",
+	"/five.inferior":  "₅",
+	"/six.inferior":   "₆",
+	"/seven.inferior": "₇",
+	"/eight.inferior": "₈",
+	"/nine.inferior":  "₉",
+	"/plus.inferior":  "₊",
+	"/minus.inferior": "₋",
+
+	// Zero-width characters
+	"/zerowidthspace":     "\u200B",
+	"/zerowidthnonjoiner": "\u200C",
+	"/zerowidthjoiner":    "\u200D",
+}
+
+// isPrintableASCII returns true if byte is printable ASCII
+func isPrintableASCII(b byte) bool {
+	return b >= 0x20 && b <= 0x7E
+}
+
+// isWhitespaceChar returns true for intentional whitespace
+func isWhitespaceChar(b byte) bool {
+	return b == 0x09 || // tab
+		b == 0x0A || // line feed
+		b == 0x0D // carriage return
+}
+
+// filterControlChars removes non-printable control characters
+// but preserves intentional whitespace
+func filterControlChars(rawBytes []byte) string {
+	var result strings.Builder
+	for _, b := range rawBytes {
+		if isPrintableASCII(b) || isWhitespaceChar(b) {
+			result.WriteByte(b)
+		}
+		// Drop other control characters (0x00-0x1F except tab/LF/CR)
+	}
+	return result.String()
 }
 
 func IdentityMatrix() Matrix {
@@ -462,7 +633,7 @@ func (e *Extractor) handleText(obj Object) {
 		for i < len(rawBytes) {
 			// Try 2 bytes
 			if i+1 < len(rawBytes) {
-				key := fmt.Sprintf("%04X", (int(rawBytes[i])<<8)|int(rawBytes[i+1]))
+				key := string(rawBytes[i : i+2])
 				if val, ok := e.textState.Font.CMap.Map[key]; ok {
 					decoded += val
 					i += 2
@@ -470,7 +641,7 @@ func (e *Extractor) handleText(obj Object) {
 				}
 			}
 			// Try 1 byte
-			key := fmt.Sprintf("%04X", rawBytes[i])
+			key := string(rawBytes[i : i+1])
 			if val, ok := e.textState.Font.CMap.Map[key]; ok {
 				decoded += val
 				i++
@@ -487,7 +658,7 @@ func (e *Extractor) handleText(obj Object) {
 			if glyphName, ok := e.textState.Font.Encoding[code]; ok {
 				// Map glyph name to Unicode
 				if unicode, ok := glyphToUnicode[glyphName]; ok {
-					decoded += string(unicode)
+					decoded += unicode
 				} else {
 					// Unknown glyph, try to extract character from name
 					// e.g., "/a" -> 'a'
@@ -505,7 +676,8 @@ func (e *Extractor) handleText(obj Object) {
 		}
 	} else {
 		// No CMap and no Encoding - fallback to direct byte conversion
-		decoded = string(rawBytes)
+		// Filter out non-printable control characters
+		decoded = filterControlChars(rawBytes)
 	}
 
 	e.buffer.WriteString(decoded)
