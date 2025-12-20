@@ -17,16 +17,23 @@ Originally developed for RAG (Retrieval-Augmented Generation) and LLM document p
 - **Text extraction** - Full text state machine with proper font metrics and spacing
 - **Character mapping** - ToUnicode CMap parsing for accurate character decoding
 - **Font encoding support** - PDF /Encoding dictionary parsing with glyph name to Unicode mapping
+- **Ligature support** - Proper rendering of text ligatures (fi, fl, ff, ffi, ffl) as multi-character strings
+- **Mathematical symbols** - Comprehensive support for Greek letters (α, β, π, Σ, Ω), operators (×, ÷, ≠, ≤, ≥, ∞, ∫, √, ∂), and astronomy symbols (⊙)
+- **Superscripts and subscripts** - Unicode rendering of superior/inferior numbers and symbols
+- **Hex string parsing** - Correct conversion of PDF hex strings to bytes per PDF 1.7 specification
+- **Control character filtering** - Removes non-printable control characters while preserving intentional whitespace
 - **Octal escape sequences** - Proper handling of PDF string literals with octal escapes (e.g., `\050` → `(`)
 - **Page tree traversal** - Recursive navigation of nested page structures
 - **Metadata extraction** - Extracts title, author, creator, producer from document info
 - **JSON output** - Structured output with page numbers, dimensions, and character counts
 - **FlateDecode support** - Automatic decompression of zlib-compressed streams
+- **Encryption support** - Automatic decryption of owner-password-only PDFs (RC4 40/128-bit, AES-128) that are viewable without a password
 
 ### ⚠️ Limitations
 
 - **CID fonts** - Limited support for complex Type0 fonts (common in Asian language PDFs)
-- **Encryption** - No support for password-protected or encrypted PDFs
+- **User-password encryption** - No support for PDFs requiring a password to view (only owner-password-only PDFs are supported)
+- **AES-256 encryption** - Only RC4 and AES-128 encryption are supported (AES-256 from PDF 1.7 Extension Level 3 not yet implemented)
 - **Images** - Text-only extraction, images are ignored
 - **Advanced filters** - Only FlateDecode implemented (no LZW, JPEG, ASCII85, etc.)
 - **Complex layouts** - May struggle with multi-column text, tables, or right-to-left text
@@ -129,12 +136,19 @@ PDF File → Reader (xref resolution) → Page Dictionary → Extractor (state m
 
 - **`pkg/pdf/lexer.go`** - Tokenizes PDF objects (dictionaries, arrays, streams, etc.)
   - Handles PDF string literals with escape sequences (`\n`, `\r`, `\nnn` octal escapes)
+  - Converts hex strings (`<48656C6C6F>`) to bytes per PDF 1.7 spec
 - **`pkg/pdf/reader.go`** - Coordinates parsing, resolves indirect object references
+  - Initializes encryption handler and decrypts objects automatically
+- **`pkg/pdf/encrypt.go`** - PDF encryption/decryption support
+  - Implements Algorithm 2 (file encryption key generation) and Algorithm 1 (per-object key derivation) from PDF spec
+  - Supports RC4 (40-bit, 128-bit) and AES-128 CBC mode decryption
+  - Automatically decrypts strings and streams before processing
 - **`pkg/pdf/xref.go`** - Handles cross-reference tables and object lookup
 - **`pkg/pdf/extractor.go`** - Text extraction with graphics/text state machines
   - Parses `/Encoding` dictionaries with `/Differences` arrays
-  - Maps glyph names (e.g., `/parenleft`, `/fi`) to Unicode characters
+  - Maps 250+ glyph names to Unicode (ligatures, math symbols, Greek letters, astronomy symbols)
   - Supports three decoding paths: ToUnicode CMap, /Encoding dictionary, or direct byte conversion
+  - Filters non-printable control characters while preserving intentional whitespace
 - **`pkg/pdf/cmap.go`** - Character mapping for font encoding (ToUnicode CMaps)
 - **`pkg/pdf/content.go`** - Content stream operator parsing
 - **`pkg/loader/loader.go`** - High-level API orchestrating the pipeline
@@ -155,6 +169,10 @@ The extractor maintains two state machines:
 
 - `bufio` - Buffered I/O for efficient parsing
 - `compress/zlib` - FlateDecode stream decompression
+- `crypto/md5` - MD5 hashing for encryption key generation
+- `crypto/rc4` - RC4 decryption for encrypted PDFs
+- `crypto/aes` - AES decryption for encrypted PDFs
+- `crypto/cipher` - Cipher block chaining (CBC) mode for AES
 - `encoding/json` - JSON output formatting
 - `unicode/utf16` - UTF-16BE decoding for CMaps
 
@@ -164,11 +182,13 @@ The extractor maintains two state machines:
 2. **Spacing heuristics** - Text spacing detection uses heuristics that may fail on complex layouts
 3. **No caching** - Objects may be re-parsed multiple times (performance trade-off for simplicity)
 4. **Partial spec compliance** - Implements subset of PDF 1.7 specification sufficient for text extraction
+5. **Subscript/superscript positioning** - Superscripts and subscripts are rendered as Unicode characters but positioning information is not preserved (e.g., "10^12" may appear as "10¹²" rather than showing the layout)
 
 ## Roadmap
 
 Future development focuses on expanding extraction capabilities for document processing pipelines:
 
+- AES-256 encryption support (PDF 1.7 Extension Level 3)
 - Additional stream filter support (LZW, ASCII85)
 - Improved CID font handling for better Unicode coverage
 - Table detection and structured content extraction

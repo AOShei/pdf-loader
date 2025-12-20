@@ -10,9 +10,10 @@ import (
 
 // Reader is the high-level entry point for reading a PDF.
 type Reader struct {
-	rs    io.ReadSeeker
-	lexer *Lexer
-	xref  *XRefTable
+	rs             io.ReadSeeker
+	lexer          *Lexer
+	xref           *XRefTable
+	encryptHandler *EncryptionHandler
 }
 
 func NewReader(rs io.ReadSeeker) (*Reader, error) {
@@ -22,11 +23,40 @@ func NewReader(rs io.ReadSeeker) (*Reader, error) {
 		return nil, err
 	}
 
-	return &Reader{
+	reader := &Reader{
 		rs:    rs,
 		xref:  xref,
 		lexer: NewLexer(rs),
-	}, nil
+	}
+
+	// 2. Check for encryption and initialize handler
+	if encRef, exists := xref.Trailer["/Encrypt"]; exists {
+		encObj := reader.Resolve(encRef)
+
+		// Get file ID from trailer
+		var fileID []byte
+		if idArray, ok := xref.Trailer["/ID"].(ArrayObject); ok && len(idArray) > 0 {
+			if idStr, ok := idArray[0].(StringObject); ok {
+				fileID = []byte(idStr)
+			} else if idHex, ok := idArray[0].(HexStringObject); ok {
+				fileID = []byte(idHex)
+			}
+		}
+
+		encDict, err := ParseEncryptDict(encObj, reader)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse encryption: %w", err)
+		}
+
+		handler, err := NewEncryptionHandler(encDict, fileID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize encryption: %w", err)
+		}
+
+		reader.encryptHandler = handler
+	}
+
+	return reader, nil
 }
 
 // GetObject resolves an indirect reference to the actual object.
@@ -66,15 +96,20 @@ func (r *Reader) GetObject(ref IndirectObject) (Object, error) {
 		lexer.skipWhitespace()
 		peek, _ := lexer.reader.Peek(6)
 		if string(peek) == "stream" {
-			return r.readStream(dict, lexer)
+			return r.readStream(dict, lexer, ref.ObjectNumber, ref.Generation)
 		}
+	}
+
+	// Decrypt non-stream objects
+	if r.encryptHandler != nil {
+		obj = r.decryptObject(obj, ref.ObjectNumber, ref.Generation)
 	}
 
 	return obj, nil
 }
 
 // readStream handles reading and DECOMPRESSING the stream data
-func (r *Reader) readStream(dict DictionaryObject, lexer *Lexer) (StreamObject, error) {
+func (r *Reader) readStream(dict DictionaryObject, lexer *Lexer, objNum, genNum int) (StreamObject, error) {
 	// 1. Get Length
 	lengthObj := r.Resolve(dict["/Length"])
 	length := int64(0)
@@ -114,6 +149,16 @@ func (r *Reader) readStream(dict DictionaryObject, lexer *Lexer) (StreamObject, 
 	// r.rs is the underlying file, which might be ahead of the buffer.
 	if _, err := io.ReadFull(lexer.reader, data); err != nil {
 		return StreamObject{}, err
+	}
+
+	// 4.5. Decrypt data BEFORE decompression (if encrypted)
+	if r.encryptHandler != nil {
+		decrypted, err := r.encryptHandler.Decrypt(data, objNum, genNum)
+		if err == nil {
+			data = decrypted
+		}
+		// If decryption fails, continue with original data
+		// Decompression will likely fail, but we'll handle that gracefully
 	}
 
 	// 5. Decompress
@@ -239,8 +284,17 @@ func (r *Reader) getCompressedObject(streamObjNum int, index int) (Object, error
 		return nil, errors.New("referenced object stream is not a stream")
 	}
 
-	n := int(stm.Dictionary["/N"].(NumberObject))
-	first := int(stm.Dictionary["/First"].(NumberObject))
+	nObj, ok := stm.Dictionary["/N"].(NumberObject)
+	if !ok {
+		return nil, errors.New("object stream missing or invalid /N parameter")
+	}
+	n := int(nObj)
+
+	firstObj, ok := stm.Dictionary["/First"].(NumberObject)
+	if !ok {
+		return nil, errors.New("object stream missing or invalid /First parameter")
+	}
+	first := int(firstObj)
 
 	// Create a lexer for the UNCOMPRESSED content
 	stmReader := bytes.NewReader(stm.Data)
@@ -248,13 +302,34 @@ func (r *Reader) getCompressedObject(streamObjNum int, index int) (Object, error
 
 	offsets := make([]int, n)
 	for i := 0; i < n; i++ {
-		stmLexer.ReadObject() // ObjNum
-		off, _ := stmLexer.ReadObject()
-		offsets[i] = int(off.(NumberObject))
+		// Read object number
+		objNum, err := stmLexer.ReadObject()
+		if err != nil {
+			return nil, fmt.Errorf("failed to read object number at index %d: %w", i, err)
+		}
+		if objNum == nil {
+			return nil, fmt.Errorf("unexpected nil object number at index %d", i)
+		}
+
+		// Read offset
+		offsetObj, err := stmLexer.ReadObject()
+		if err != nil {
+			return nil, fmt.Errorf("failed to read offset at index %d: %w", i, err)
+		}
+		if offsetObj == nil {
+			return nil, fmt.Errorf("unexpected nil offset at index %d", i)
+		}
+
+		// Type assert to NumberObject
+		offset, ok := offsetObj.(NumberObject)
+		if !ok {
+			return nil, fmt.Errorf("expected NumberObject for offset at index %d, got %T", i, offsetObj)
+		}
+		offsets[i] = int(offset)
 	}
 
-	if index >= n {
-		return nil, errors.New("object index out of bounds")
+	if index < 0 || index >= n {
+		return nil, fmt.Errorf("object index %d out of bounds [0, %d)", index, n)
 	}
 
 	startOffset := int64(first + offsets[index])
@@ -284,4 +359,80 @@ func (r *Reader) GetInfo() (DictionaryObject, error) {
 		}
 	}
 	return nil, nil
+}
+
+// IsEncrypted checks if the PDF has an encryption dictionary in its trailer
+func (r *Reader) IsEncrypted() bool {
+	_, exists := r.xref.Trailer["/Encrypt"]
+	return exists
+}
+
+// isMetadataKey checks if a dictionary key should not be encrypted
+func isMetadataKey(key string) bool {
+	// These keys are never encrypted per PDF spec
+	metadataKeys := map[string]bool{
+		"/Type":             true,
+		"/Subtype":          true,
+		"/Length":           true,
+		"/Filter":           true,
+		"/DecodeParms":      true,
+		"/Width":            true,
+		"/Height":           true,
+		"/BitsPerComponent": true,
+		"/ColorSpace":       true,
+		"/Encrypt":          true,
+		"/ID":               true,
+		"/Size":             true,
+		"/Root":             true,
+		"/Info":             true,
+		"/Prev":             true,
+		"/Index":            true,
+		"/W":                true,
+		"/First":            true,
+		"/N":                true,
+	}
+	return metadataKeys[key]
+}
+
+// decryptObject recursively decrypts an object
+func (r *Reader) decryptObject(obj Object, objNum, genNum int) Object {
+	if r.encryptHandler == nil {
+		return obj // Not encrypted
+	}
+
+	switch v := obj.(type) {
+	case StringObject:
+		decrypted, err := r.encryptHandler.Decrypt([]byte(v), objNum, genNum)
+		if err != nil {
+			return v // Return original on error
+		}
+		return StringObject(decrypted)
+
+	case HexStringObject:
+		decrypted, err := r.encryptHandler.Decrypt([]byte(v), objNum, genNum)
+		if err != nil {
+			return v
+		}
+		return HexStringObject(decrypted)
+
+	case ArrayObject:
+		// Recursively decrypt array elements
+		for i, elem := range v {
+			v[i] = r.decryptObject(elem, objNum, genNum)
+		}
+		return v
+
+	case DictionaryObject:
+		// Recursively decrypt dictionary values (except metadata keys)
+		for key, val := range v {
+			if !isMetadataKey(key) {
+				v[key] = r.decryptObject(val, objNum, genNum)
+			}
+		}
+		return v
+
+	default:
+		// Numbers, names, booleans, null, etc. are not encrypted
+		return obj
+	}
 }

@@ -25,20 +25,31 @@ func LoadPDF(path string) (*model.Document, error) {
 	}
 
 	// 3. Extract Metadata
-	meta := model.Metadata{}
-	if info, err := reader.GetInfo(); err == nil && info != nil {
-		if t, ok := info["/Title"].(pdf.StringObject); ok {
-			meta.Title = string(t)
+	meta := model.Metadata{
+		Encrypted: reader.IsEncrypted(),
+	}
+
+	// Skip metadata extraction if encrypted (strings will be garbage)
+	if !meta.Encrypted {
+		if info, err := reader.GetInfo(); err == nil && info != nil {
+			if t, ok := info["/Title"].(pdf.StringObject); ok {
+				meta.Title = string(t)
+			}
+			if a, ok := info["/Author"].(pdf.StringObject); ok {
+				meta.Author = string(a)
+			}
+			if c, ok := info["/Creator"].(pdf.StringObject); ok {
+				meta.Creator = string(c)
+			}
+			if p, ok := info["/Producer"].(pdf.StringObject); ok {
+				meta.Producer = string(p)
+			}
 		}
-		if a, ok := info["/Author"].(pdf.StringObject); ok {
-			meta.Author = string(a)
-		}
-		if c, ok := info["/Creator"].(pdf.StringObject); ok {
-			meta.Creator = string(c)
-		}
-		if p, ok := info["/Producer"].(pdf.StringObject); ok {
-			meta.Producer = string(p)
-		}
+	}
+
+	// Log if encrypted (attempting decryption with empty password)
+	if meta.Encrypted {
+		fmt.Fprintf(os.Stderr, "PDF is encrypted. Attempting to decrypt with empty password (owner-password-only PDFs)...\n")
 	}
 
 	doc := &model.Document{
