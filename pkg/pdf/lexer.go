@@ -376,8 +376,3 @@ func isDigit(b byte) bool {
 func isAlpha(b byte) bool {
 	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
 }
-
-func isInteger(s string) bool {
-	_, err := strconv.Atoi(s)
-	return err == nil
-}

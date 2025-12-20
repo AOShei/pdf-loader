@@ -167,10 +167,13 @@ func (t *XRefTable) readStandardXRef(rs io.ReadSeeker) (int64, DictionaryObject,
 		count := int(countNum)
 		lexer.skipWhitespace()
 
+		// IMPORTANT: Read from lexer.reader (not rs) to avoid buffering issues.
+		// The lexer has buffered data from reading subsection headers,
+		// so reading from rs would skip buffered content and cause EOF errors.
 		// Read `count` lines of 20 bytes each
 		lineBuf := make([]byte, 20)
 		for i := 0; i < count; i++ {
-			if _, err := io.ReadFull(rs, lineBuf); err != nil {
+			if _, err := io.ReadFull(lexer.reader, lineBuf); err != nil {
 				return 0, nil, err
 			}
 			offsetStr := string(lineBuf[:10])
@@ -384,6 +387,11 @@ func readField(r io.Reader, width int) int64 {
 // applyPngPredictor decodes PNG predicted data (Predictor >= 10)
 // Simplified for PNG Up (12) which is most common in PDFs.
 func applyPngPredictor(data []byte, columns int, predictor int) ([]byte, error) {
+	// Validate predictor is in PNG range (10-15 per PDF spec)
+	if predictor < 10 || predictor > 15 {
+		return nil, fmt.Errorf("unsupported predictor: %d (expected 10-15)", predictor)
+	}
+
 	// Row size = columns + 1 (filter byte)
 	rowSize := columns + 1
 	if len(data)%rowSize != 0 {

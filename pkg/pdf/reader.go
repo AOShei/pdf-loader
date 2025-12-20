@@ -94,14 +94,15 @@ func (r *Reader) readStream(dict DictionaryObject, lexer *Lexer) (StreamObject, 
 	if err != nil {
 		return StreamObject{}, err
 	}
-	if b == '\r' {
+	switch b {
+	case '\r':
 		next, _ := lexer.reader.Peek(1)
 		if len(next) > 0 && next[0] == '\n' {
 			lexer.reader.ReadByte() // Consume \n
 		}
-	} else if b == '\n' {
-		// OK
-	} else {
+	case '\n':
+		// OK - standard LF
+	default:
 		// Not a standard newline, back up to be safe
 		lexer.reader.UnreadByte()
 	}

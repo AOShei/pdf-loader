@@ -1,6 +1,7 @@
 
 # Sample PDFs
 sample.pdf
+*.pdf
 
 *.log
 *.json

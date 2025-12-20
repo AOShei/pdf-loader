@@ -23,24 +23,28 @@ func ParseCMap(data []byte) (*CMap, error) {
 	cmap := NewCMap()
 	lexer := NewLexer(bytes.NewReader(data))
 
-	// Iterate tokens to find beginbfchar / beginbfrange
+	// Iterate objects to find beginbfchar / beginbfrange keywords
 	for {
-		token, err := readRawToken(lexer)
+		obj, err := lexer.ReadObject()
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
-			return nil, err
+			// Ignore errors and continue - CMap has lots of PostScript we can skip
+			continue
 		}
 
-		switch token {
-		case "beginbfchar":
-			if err := parseBFChar(lexer, cmap); err != nil {
-				return nil, err
-			}
-		case "beginbfrange":
-			if err := parseBFRange(lexer, cmap); err != nil {
-				return nil, err
+		// Check for keywords
+		if keyword, ok := obj.(KeywordObject); ok {
+			switch string(keyword) {
+			case "beginbfchar":
+				if err := parseBFChar(lexer, cmap); err != nil {
+					return nil, err
+				}
+			case "beginbfrange":
+				if err := parseBFRange(lexer, cmap); err != nil {
+					return nil, err
+				}
 			}
 		}
 	}
@@ -53,15 +57,16 @@ func parseBFChar(l *Lexer, cmap *CMap) error {
 	for {
 		srcObj, err := l.ReadObject()
 		if err != nil {
-			// Check if it is "endbfchar" (ReadObject fails on keywords usually)
-			// But since <HEX> is standard object, we only fail on the keyword "endbfchar"
-			// We might need to peek or handle error.
-			// Simplified: assume we check raw token if ReadObject fails
-			token, _ := readRawToken(l)
-			if token == "endbfchar" {
+			return err
+		}
+
+		// Check for terminating keyword
+		if keyword, ok := srcObj.(KeywordObject); ok {
+			if string(keyword) == "endbfchar" {
 				return nil
 			}
-			return err
+			// Skip unexpected keywords and continue
+			continue
 		}
 
 		// Standard BFChar is: <AAAA> <BBBB>
@@ -76,6 +81,7 @@ func parseBFChar(l *Lexer, cmap *CMap) error {
 		if ok1 && ok2 {
 			cmap.Map[string(srcHex)] = decodeUTF16BE(dstHex)
 		}
+		// If not both hex strings, skip this pair and continue
 	}
 }
 
@@ -86,11 +92,16 @@ func parseBFRange(l *Lexer, cmap *CMap) error {
 	for {
 		startObj, err := l.ReadObject()
 		if err != nil {
-			token, _ := readRawToken(l)
-			if token == "endbfrange" {
+			return err
+		}
+
+		// Check for terminating keyword
+		if keyword, ok := startObj.(KeywordObject); ok {
+			if string(keyword) == "endbfrange" {
 				return nil
 			}
-			return err
+			// Skip unexpected keywords and continue
+			continue
 		}
 
 		endObj, err := l.ReadObject()
@@ -103,8 +114,17 @@ func parseBFRange(l *Lexer, cmap *CMap) error {
 			return err
 		}
 
-		startCode := hexToInt(startObj.(HexStringObject))
-		endCode := hexToInt(endObj.(HexStringObject))
+		// Safe type assertions with validation
+		startHex, startOk := startObj.(HexStringObject)
+		endHex, endOk := endObj.(HexStringObject)
+
+		if !startOk || !endOk {
+			// Skip invalid entries
+			continue
+		}
+
+		startCode := hexToInt(startHex)
+		endCode := hexToInt(endHex)
 
 		// Case 2: Array [<dst1> <dst2> ...]
 		if arr, ok := nextObj.(ArrayObject); ok {
@@ -112,7 +132,7 @@ func parseBFRange(l *Lexer, cmap *CMap) error {
 				if hexStr, ok := elem.(HexStringObject); ok {
 					currentCode := startCode + i
 					if currentCode <= endCode {
-						key := intToHex(currentCode, len(startObj.(HexStringObject)))
+						key := intToHex(currentCode, len(startHex))
 						cmap.Map[key] = decodeUTF16BE(hexStr)
 					}
 				}
@@ -126,42 +146,18 @@ func parseBFRange(l *Lexer, cmap *CMap) error {
 			dstCode := hexToInt(dstStartHex)
 
 			for i := 0; i <= (endCode - startCode); i++ {
-				srcKey := intToHex(startCode+i, len(startObj.(HexStringObject)))
+				srcKey := intToHex(startCode+i, len(startHex))
 				// This is a simplification. Real unicode incrementing is complex.
 				// However, PDF spec says the last byte increments.
 				dstVal := intToHex(dstCode+i, len(dstStartHex))
 				cmap.Map[srcKey] = decodeUTF16BE(HexStringObject(dstVal))
 			}
 		}
+		// If nextObj is neither array nor hex string, skip this entry
 	}
 }
 
 // Helpers
-
-func readRawToken(l *Lexer) (string, error) {
-	l.skipWhitespace()
-	var buf bytes.Buffer
-	for {
-		b, err := l.reader.Peek(1)
-		if err != nil {
-			if buf.Len() > 0 {
-				break
-			}
-			return "", err
-		}
-		c := b[0]
-		if isDelimiter(c) || isWhitespace(c) {
-			if buf.Len() == 0 && isDelimiter(c) {
-				// If it's a delimiter, maybe we should skip it or return it?
-				// For keywords like "beginbfchar", they are not delimiters.
-			}
-			break
-		}
-		l.reader.ReadByte()
-		buf.WriteByte(c)
-	}
-	return buf.String(), nil
-}
 
 func hexToInt(h HexStringObject) int {
 	// Convert bytes to integer
