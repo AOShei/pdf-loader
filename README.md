@@ -1,4 +1,4 @@
-# PDF Loader
+# GoFast PDF 🛸 Loader
 
 [![Go Version](https://img.shields.io/badge/Go-1.25-00ADD8?logo=go)](https://golang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -33,7 +33,7 @@ A high-performance, dependency-free Go library for extracting text and image met
 ## Installation
 
 ```bash
-go get [github.com/AOShei/pdf-loader](https://github.com/AOShei/pdf-loader)
+go get [github.com/AOShei/go-fast-pdf](https://github.com/AOShei/go-fast-pdf)
 
 ```
 
@@ -45,13 +45,13 @@ The CLI now supports flags for concurrency and image extraction.
 
 ```bash
 # Basic usage
-./pdf-loader document.pdf
+./go-fast-pdf document.pdf
 
 # High-performance mode (Concurrent)
-./pdf-loader --concurrent --workers 8 document.pdf
+./go-fast-pdf --concurrent --workers 8 document.pdf
 
 # Enable image detection
-./pdf-loader --images document.pdf
+./go-fast-pdf --images document.pdf
 
 ```
 

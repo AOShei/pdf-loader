@@ -5,7 +5,7 @@ import (
 	"math"
 	"strings"
 
-	"github.com/AOShei/pdf-loader/pkg/model"
+	"github.com/AOShei/go-fast-pdf/pkg/model"
 )
 
 // Matrix is a 3x3 transform matrix (last row implicitly 0,0,1).

@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/AOShei/pdf-loader/pkg/model"
-	"github.com/AOShei/pdf-loader/pkg/pdf"
+	"github.com/AOShei/go-fast-pdf/pkg/model"
+	"github.com/AOShei/go-fast-pdf/pkg/pdf"
 )
 
 // pageResult holds the result of processing a single page

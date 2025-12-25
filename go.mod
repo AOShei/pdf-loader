@@ -1,3 +1,3 @@
-module github.com/AOShei/pdf-loader
+module github.com/AOShei/go-fast-pdf
 
 go 1.25.4
