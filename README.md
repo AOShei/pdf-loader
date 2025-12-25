@@ -65,7 +65,7 @@ import (
     "fmt"
     "log"
     
-    "[github.com/AOShei/pdf-loader/pkg/loader](https://github.com/AOShei/pdf-loader/pkg/loader)"
+    "[github.com/AOShei/go-fast-pdf/pkg/loader](https://github.com/AOShei/go-fast-pdf/pkg/loader)"
 )
 
 func main() {
