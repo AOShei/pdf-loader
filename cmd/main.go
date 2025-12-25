@@ -12,21 +12,22 @@ import (
 func main() {
 	concurrent := flag.Bool("concurrent", false, "Enable concurrent page processing")
 	workers := flag.Int("workers", 0, "Number of worker threads (0 = auto-detect, default: NumCPU)")
+	extractImages := flag.Bool("images", false, "Extract image metadata (width, height, position) from pages")
 	flag.Parse()
 
 	if flag.NArg() < 1 {
-		log.Fatal("Usage: pdf-loader [--concurrent] [--workers N] <path_to_pdf>")
+		log.Fatal("Usage: pdf-loader [--concurrent] [--workers N] [--images] <path_to_pdf>")
 	}
 
 	path := flag.Arg(0)
 
 	var err error
-	var doc interface{}
+	var doc any
 
 	if *concurrent {
-		doc, err = loader.LoadPDFConcurrent(path, *workers)
+		doc, err = loader.LoadPDFConcurrent(path, *workers, *extractImages)
 	} else {
-		doc, err = loader.LoadPDF(path)
+		doc, err = loader.LoadPDF(path, *extractImages)
 	}
 
 	if err != nil {

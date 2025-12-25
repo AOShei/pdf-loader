@@ -18,12 +18,12 @@ type Metadata struct {
 
 // Page represents a single page in the PDF.
 type Page struct {
-	PageNumber int     `json:"page_number"`
-	Content    string  `json:"content"` // Markdown/Formatted text
-	CharCount  int     `json:"char_count"`
-	Width      float64 `json:"width"`
-	Height     float64 `json:"height"`
-	Images     []Image `json:"images,omitempty"`
+	PageNumber int      `json:"page_number"`
+	Content    string   `json:"content"` // Markdown/Formatted text
+	CharCount  int      `json:"char_count"`
+	Width      float64  `json:"width"`
+	Height     float64  `json:"height"`
+	Images     *[]Image `json:"images,omitempty"` // Pointer allows nil (omitted) vs empty slice (shown as [])
 }
 
 // Image represents an image reference on a page.

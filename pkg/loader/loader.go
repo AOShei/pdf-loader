@@ -19,7 +19,7 @@ type pageResult struct {
 }
 
 // LoadPDF takes a file path and returns the structured Document.
-func LoadPDF(path string) (*model.Document, error) {
+func LoadPDF(path string, extractImages bool) (*model.Document, error) {
 	// 1. Open File
 	f, err := os.Open(path)
 	if err != nil {
@@ -81,7 +81,7 @@ func LoadPDF(path string) (*model.Document, error) {
 		}
 
 		// Initialize Extractor for this page
-		extractor, err := pdf.NewExtractor(reader, pdfPage)
+		extractor, err := pdf.NewExtractor(reader, pdfPage, extractImages)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error creating extractor for page %d: %v\n", i+1, err)
 			continue
@@ -124,7 +124,7 @@ func LoadPDF(path string) (*model.Document, error) {
 
 // LoadPDFConcurrent loads a PDF and extracts text using concurrent page processing.
 // The workers parameter specifies the number of concurrent workers (0 = auto-detect using NumCPU).
-func LoadPDFConcurrent(path string, workers int) (*model.Document, error) {
+func LoadPDFConcurrent(path string, workers int, extractImages bool) (*model.Document, error) {
 	// 1. Open File to get metadata and page count
 	f, err := os.Open(path)
 	if err != nil {
@@ -168,11 +168,11 @@ func LoadPDFConcurrent(path string, workers int) (*model.Document, error) {
 	fmt.Fprintf(os.Stderr, "Processing %d pages concurrently...\n", numPages)
 
 	// 4. Process pages concurrently
-	return loadPDFParallel(path, meta, numPages, workers)
+	return loadPDFParallel(path, meta, numPages, workers, extractImages)
 }
 
 // loadPDFParallel implements the worker pool pattern for concurrent page extraction
-func loadPDFParallel(path string, meta model.Metadata, numPages int, workers int) (*model.Document, error) {
+func loadPDFParallel(path string, meta model.Metadata, numPages int, workers int, extractImages bool) (*model.Document, error) {
 	// 1. Determine worker count
 	if workers <= 0 {
 		workers = runtime.NumCPU()
@@ -226,7 +226,7 @@ func loadPDFParallel(path string, meta model.Metadata, numPages int, workers int
 					continue
 				}
 
-				extractor, err := pdf.NewExtractor(reader, pdfPage)
+				extractor, err := pdf.NewExtractor(reader, pdfPage, extractImages)
 				if err != nil {
 					results <- pageResult{pageNum: pageIdx, err: err}
 					continue

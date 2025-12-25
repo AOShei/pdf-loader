@@ -359,17 +359,23 @@ type Extractor struct {
 	buffer       strings.Builder
 
 	// Image tracking
-	images   []model.Image
+	images   *[]model.Image // Pointer allows nil (disabled) vs empty slice (enabled, no images)
 	xobjects DictionaryObject
 }
 
-func NewExtractor(r *Reader, page DictionaryObject) (*Extractor, error) {
+func NewExtractor(r *Reader, page DictionaryObject, extractImages bool) (*Extractor, error) {
 	e := &Extractor{
 		reader:    r,
 		page:      page,
 		gState:    GraphicsState{CTM: IdentityMatrix()},
 		textState: NewTextState(),
 		fonts:     make(map[string]*Font),
+	}
+
+	// Only initialize images slice if extraction is enabled
+	if extractImages {
+		imgs := make([]model.Image, 0)
+		e.images = &imgs
 	}
 
 	// Load Fonts and XObjects from Resources
@@ -381,9 +387,11 @@ func NewExtractor(r *Reader, page DictionaryObject) (*Extractor, error) {
 			}
 		}
 
-		// Load XObject resources for image handling
-		if xobjects, ok := r.Resolve(res["/XObject"]).(DictionaryObject); ok {
-			e.xobjects = xobjects
+		// Only load XObject resources if image extraction is enabled
+		if extractImages {
+			if xobjects, ok := r.Resolve(res["/XObject"]).(DictionaryObject); ok {
+				e.xobjects = xobjects
+			}
 		}
 	}
 
@@ -590,17 +598,21 @@ func (e *Extractor) processOp(op Operation) {
 		e.processOp(Operation{Operator: "T*"})
 		e.processOp(Operation{Operator: "Tj", Operands: op.Operands[2:]})
 	case "INLINE_IMAGE":
-		// Handle inline image placeholder
-		if len(op.Operands) > 0 {
-			if dict, ok := op.Operands[0].(DictionaryObject); ok {
-				e.recordInlineImage(dict)
+		// Handle inline image placeholder (only if extraction enabled)
+		if e.images != nil {
+			if len(op.Operands) > 0 {
+				if dict, ok := op.Operands[0].(DictionaryObject); ok {
+					e.recordInlineImage(dict)
+				}
 			}
 		}
 	case "Do":
-		// Handle XObject (image) reference
-		if len(op.Operands) > 0 {
-			if name, ok := op.Operands[0].(NameObject); ok {
-				e.recordImage(string(name))
+		// Handle XObject (image) reference (only if extraction enabled)
+		if e.images != nil {
+			if len(op.Operands) > 0 {
+				if name, ok := op.Operands[0].(NameObject); ok {
+					e.recordImage(string(name))
+				}
 			}
 		}
 	}
@@ -783,7 +795,7 @@ func (e *Extractor) recordInlineImage(dict DictionaryObject) {
 		img.ColorSpace = string(cs)
 	}
 
-	e.images = append(e.images, img)
+	*e.images = append(*e.images, img)
 }
 
 // recordImage records an XObject image reference
@@ -794,16 +806,31 @@ func (e *Extractor) recordImage(name string) {
 
 	// Resolve XObject to get metadata
 	xobj := e.reader.Resolve(e.xobjects[name])
-	xobjDict, ok := xobj.(DictionaryObject)
-	if !ok {
+
+	// XObjects can be either DictionaryObject or StreamObject
+	var xobjDict DictionaryObject
+	switch obj := xobj.(type) {
+	case DictionaryObject:
+		xobjDict = obj
+	case StreamObject:
+		xobjDict = obj.Dictionary
+	default:
 		return
 	}
 
-	// Check if it's actually an image (not a form XObject)
+	// Check the subtype - can be /Image or /Form
 	if subtype, ok := e.reader.Resolve(xobjDict["/Subtype"]).(NameObject); ok {
-		if string(subtype) != "/Image" {
-			return // Not an image, skip
+		if string(subtype) == "/Form" {
+			// Form XObjects contain nested content streams that may reference images
+			e.processFormXObject(name, xobj)
+			return
 		}
+
+		if string(subtype) != "/Image" {
+			return
+		}
+	} else {
+		return
 	}
 
 	img := model.Image{
@@ -823,7 +850,101 @@ func (e *Extractor) recordImage(name string) {
 		img.ColorSpace = string(cs)
 	}
 
-	e.images = append(e.images, img)
+	*e.images = append(*e.images, img)
+}
+
+// processFormXObject recursively processes a Form XObject to find nested images
+func (e *Extractor) processFormXObject(name string, xobj Object) {
+	// Form XObjects are StreamObjects containing a content stream
+	streamObj, ok := xobj.(StreamObject)
+	if !ok {
+		return
+	}
+
+	// Get the Form's Resources dictionary (if any)
+	formDict := streamObj.Dictionary
+	var formResources DictionaryObject
+	if res, ok := e.reader.Resolve(formDict["/Resources"]).(DictionaryObject); ok {
+		formResources = res
+	}
+
+	// Parse the form's content stream to find Do operators (image references)
+	parser := NewContentStreamParser(streamObj.Data)
+
+	for {
+		op, err := parser.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			break
+		}
+
+		// Look for Do operator (XObject invocation)
+		if op.Operator == "Do" && len(op.Operands) > 0 {
+			if imgName, ok := op.Operands[0].(NameObject); ok {
+
+				// Get the nested XObject from the form's resources
+				if formResources != nil {
+					if nestedXObjects, ok := e.reader.Resolve(formResources["/XObject"]).(DictionaryObject); ok {
+						if nestedXObj := e.reader.Resolve(nestedXObjects[string(imgName)]); nestedXObj != nil {
+							// Recursively process this XObject (could be another Form or an Image)
+							e.recordNestedImage(string(imgName), nestedXObj)
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+// recordNestedImage handles images found within Form XObjects
+func (e *Extractor) recordNestedImage(name string, xobj Object) {
+	// Similar to recordImage but for nested objects
+	var xobjDict DictionaryObject
+	switch obj := xobj.(type) {
+	case DictionaryObject:
+		xobjDict = obj
+	case StreamObject:
+		xobjDict = obj.Dictionary
+	default:
+		return
+	}
+
+	// Check subtype
+	if subtype, ok := e.reader.Resolve(xobjDict["/Subtype"]).(NameObject); ok {
+
+		if string(subtype) == "/Form" {
+			// Another nested form - recurse
+			e.processFormXObject(name, xobj)
+			return
+		}
+
+		if string(subtype) != "/Image" {
+			return
+		}
+	} else {
+		return
+	}
+
+	// It's an image - record it
+	img := model.Image{
+		Type: "image",
+		ID:   name,
+		Rect: e.calculateImageRect(),
+	}
+
+	if w, ok := e.reader.Resolve(xobjDict["/Width"]).(NumberObject); ok {
+		img.Width = float64(w)
+	}
+	if h, ok := e.reader.Resolve(xobjDict["/Height"]).(NumberObject); ok {
+		img.Height = float64(h)
+	}
+	if cs, ok := e.reader.Resolve(xobjDict["/ColorSpace"]).(NameObject); ok {
+		img.ColorSpace = string(cs)
+	}
+
+	*e.images = append(*e.images, img)
 }
 
 // calculateImageRect calculates the bounding box of an image using current CTM
@@ -842,7 +963,7 @@ func (e *Extractor) calculateImageRect() []float64 {
 }
 
 // GetImages returns the images found on this page
-func (e *Extractor) GetImages() []model.Image {
+func (e *Extractor) GetImages() *[]model.Image {
 	return e.images
 }
 
